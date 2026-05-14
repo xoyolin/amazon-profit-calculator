@@ -82,10 +82,13 @@ def map_amazon_type(row):
     if 'FBA Inventory Storage Fee' in d: return 'fba inventory storage fee'
     return t
 
+st.set_page_config(page_title="亚马逊财务利润统计系统", layout="centered")
+st.title("📊 亚马逊财务利润统计系统v1.0")
+st.caption("已支持美国/加拿大/英国/德国/法国/意大利/西班牙/瑞典/荷兰/波兰/比利时/爱尔兰 12 个国家")
+
 st.info(
     "🛡️ **数据安全承诺**：代码已在GitHub开源。您的所有报表数据仅在内存中进行即时核算，"
-    "**绝不会被上传、收集或储存在任何服务器上**。页面刷新或关闭后数据立即销毁，请放心使用！", 
-    icon="🔒"
+    "**绝不会被上传、收集或储存在任何服务器上**。页面刷新或关闭后数据立即销毁，请放心使用！"
 )
 st.markdown("---") 
 
