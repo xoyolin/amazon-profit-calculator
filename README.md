@@ -1,12 +1,7 @@
-声明：代码开源，禁止商用。上传的文件只读取，不会储存任何数据！
+🛡️ 数据安全承诺：本项目代码已在GitHub开源。您的所有数据仅在当前会话的内存中进行即时核算，绝不会被上传、收集或储存在任何服务器上。关闭或刷新页面后数据将立即销毁，请放心使用。
 
+开源与授权声明：
+本项目采用 AGPL-3.0 协议开源。这意味着你可以自由地使用、修改和分发代码，但前提是你的衍生项目也必须以 AGPL-3.0 协议开源。
 
-已部署在第三方平台streamlit，在线使用免部署：https://amazon-profit-calculator.streamlit.app/
+在线使用免部署：https://amazon-profit-calculator.streamlit.app/
 
-
-本地部署：  
-1.下载本项目的app.py和Mapping.xlsx，放在同一文件夹  
-2.安装Python  
-3.在该文件夹地址栏输入CMD,回车，打开CMD运行 pip install streamlit pandas numpy openpyxl 等待安装完成  
-4.运行streamlit run app.py。浏览器会自动弹出网页  
-5.先上传亚马逊日期范围报告，然后下载SKU成本填写模板，填写SKU产品和头程成本（注意跟该国家同币种），上传成本表格，最后下载报表  
