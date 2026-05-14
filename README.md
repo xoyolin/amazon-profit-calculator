@@ -4,7 +4,7 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-App-red.svg)](https://streamlit.io/)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
-专为亚马逊卖家打造的**极速、精准、安全**的财务利润核算工具。彻底告别卡顿报错的传统 Excel VBA 宏，只需一键上传「日期范围报告」，即可自动清洗欧洲站复杂乱码、精准剥离税金，并秒级生成带完美排版的财务分析报表。
+专为亚马逊卖家打造的**极速、精准、安全**的财务利润核算工具。彻底告别卡顿报错的传统 Excel VBA 宏，只需一键上传「日期范围报告」，即可自动分析统计，生成带完美排版的财务分析报表。
 
 🌐 **[👉 点击这里，立即在线免费体验！](https://amazon-profit-calculator.streamlit.app/)**
 
