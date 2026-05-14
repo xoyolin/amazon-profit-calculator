@@ -174,7 +174,7 @@ if st.session_state.raw_df is not None:
                 st.download_button("⬇️ 第一步：下载 SKU 成本填写模板", data=buf.getvalue(), file_name="SKU_Cost_Template.xlsx")
 
 if st.session_state.raw_df is not None:
-    uploaded_cost = st.file_uploader("⬇️ 第二步：上传填好的成本表", type=["xlsx", "csv"], key="cost_up")
+    uploaded_cost = st.file_uploader("⬇️ 第二步：上传填好的成本表（填写产品和头程成本，要换算汇率，币种跟统计站点一致）", type=["xlsx", "csv"], key="cost_up")
     if uploaded_cost:
         try:
             cdf = pd.read_excel(uploaded_cost) if str(uploaded_cost.name).endswith('xlsx') else pd.read_csv(uploaded_cost)
