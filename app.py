@@ -82,9 +82,19 @@ def map_amazon_type(row):
     if 'FBA Inventory Storage Fee' in d: return 'fba inventory storage fee'
     return t
 
-st.set_page_config(page_title="亚马逊财务核算系统", layout="centered")
-st.title("📊 亚马逊财务利润统计 测试版")
-st.caption("已支持美国/加拿大/英国/德国/法国/意大利/西班牙/瑞典/荷兰/波兰/比利时/爱尔兰 12 个国家")
+st.info(
+    "🛡️ **数据安全承诺**：代码已在GitHub开源。您的所有报表数据仅在内存中进行即时核算，"
+    "**绝不会被上传、收集或储存在任何服务器上**。页面刷新或关闭后数据立即销毁，请放心使用！", 
+    icon="🔒"
+)
+st.markdown("---") 
+
+with st.sidebar:
+    st.header("☕ 赞助与支持")
+    st.markdown("如果这个开源工具帮您节省了核算利润的时间，欢迎请作者喝一杯奶茶！您的支持是我持续更新的最大动力。")
+    
+    if os.path.exists("pay.png"):
+        st.image("pay.png", caption="打开微信扫一扫")
 
 if 'raw_df' not in st.session_state: st.session_state.raw_df = None
 if 'sku_list' not in st.session_state: st.session_state.sku_list = None
