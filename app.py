@@ -83,7 +83,7 @@ def map_amazon_type(row):
     return t
 
 st.set_page_config(page_title="亚马逊财务利润统计系统", layout="centered")
-st.title("📊 亚马逊财务利润统计系统v1.0")
+st.title("📊 亚马逊财务利润统计系统v1.1")
 st.caption("已支持美国/加拿大/英国/德国/法国/意大利/西班牙/瑞典/荷兰/波兰/比利时/爱尔兰 12 个国家")
 
 st.info(
@@ -224,28 +224,34 @@ if st.session_state.sku_list is not None and 'type' in st.session_state.raw_df.c
     df_fo['毛利率'] = np.where(df_fo['销售额']!=0, df_fo['毛利']/df_fo['销售额'], 0)
 
     total_sales, total_receipts = df_fo['销售额'].sum(), df_fo['售出回款'].sum()
+    total_ad_fee = abs(df[df['type']=='cost of advertising']['total'].sum())
+    df_fo['广告费分摊'] = np.where(total_sales!=0, total_ad_fee * df_fo['销售额'] / total_sales, 0)
+    df_fo['扣广告后利润'] = df_fo['毛利'] - df_fo['广告费分摊']
+    df_fo['扣广告后单个利润'] = np.where(df_fo['商品成交数量']!=0, df_fo['扣广告后利润']/df_fo['商品成交数量'], 0)
+    df_fo['扣广告后利润率'] = np.where(df_fo['销售额']!=0, df_fo['扣广告后利润']/df_fo['销售额'], 0)
     total_refund_amt, total_refund_qty = df_fo['退款金额'].sum(), df_fo['退货数量'].sum()
     total_order_cost, total_gross_profit = df_fo['订单成本'].sum(), df_fo['毛利'].sum()
+    total_profit_after_ad = df_fo['扣广告后利润'].sum()
     t_tax = round((df['total']-df['net total']).sum(), 2)
     shop_p = df_t['金额 (本币)'].iloc[-1] - t_tax - total_order_cost
     g_m = shop_p / total_sales if total_sales != 0 else 0
 
-    df_fo = df_fo[['标题','SKU','产品和头程成本','平均售价','销售额','售出回款','退款金额','退货数量','退货率','成交金额','商品出库数量','商品成交数量','订单成本','毛利','单个利润','毛利率']]
-    df_fo.loc[len(df_fo)] = ['合计','-','-','-', total_sales, total_receipts, total_refund_amt, total_refund_qty, (trq/toq if toq else 0),'-','-','-', total_order_cost, total_gross_profit, '-', (total_gross_profit/total_sales if total_sales else 0)]
+    df_fo = df_fo[['标题','SKU','产品和头程成本','平均售价','销售额','售出回款','退款金额','退货数量','退货率','成交金额','商品出库数量','商品成交数量','订单成本','毛利','单个利润','毛利率','广告费分摊','扣广告后利润','扣广告后单个利润','扣广告后利润率']]
+    df_fo.loc[len(df_fo)] = ['合计','-','-','-', total_sales, total_receipts, total_refund_amt, total_refund_qty, (trq/toq if toq else 0),'-','-','-', total_order_cost, total_gross_profit, '-', (total_gross_profit/total_sales if total_sales else 0), total_ad_fee, total_profit_after_ad, '-', (total_profit_after_ad/total_sales if total_sales else 0)]
     
     buf_f = io.BytesIO()
     with pd.ExcelWriter(buf_f, engine='openpyxl') as w:
         df_fo.to_excel(w, index=False, sheet_name='Order', startrow=2)
         ws_o = w.sheets['Order']
-        ws_o.merge_cells('A1:P1'); ws_o['A1']='订单统计表'; ws_o['A1'].font=Font(bold=True,size=16); ws_o['A1'].alignment=Alignment(horizontal='center')
+        ws_o.merge_cells('A1:T1'); ws_o['A1']='订单统计表'; ws_o['A1'].font=Font(bold=True,size=16); ws_o['A1'].alignment=Alignment(horizontal='center')
         ws_o.column_dimensions['A'].width=40; ws_o.column_dimensions['B'].width=18
-        for c in range(3,17): ws_o.column_dimensions[get_column_letter(c)].width=15
+        for c in range(3,21): ws_o.column_dimensions[get_column_letter(c)].width=15
         for row in ws_o.iter_rows(min_row=3):
             for cell in row:
                 cell.alignment=Alignment(horizontal='center')
                 if cell.row==3 or cell.row==ws_o.max_row: cell.font=Font(bold=True); cell.fill=PatternFill(start_color="F2F2F2",fill_type="solid")
-                if cell.column in [9,16] and cell.row>3: cell.number_format='0.00%'
-                elif cell.column in [3,4,5,6,7,10,13,14,15] and cell.row>3: cell.number_format='0.00'
+                if cell.column in [9,16,20] and cell.row>3: cell.number_format='0.00%'
+                elif cell.column in [3,4,5,6,7,10,13,14,15,17,18,19] and cell.row>3: cell.number_format='0.00'
         
         df_t.to_excel(w, index=False, sheet_name='TOTAL', startrow=7)
         ws_t = w.sheets['TOTAL']
