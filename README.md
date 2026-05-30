@@ -1,4 +1,4 @@
-# 📊 亚马逊多国财务利润统计系统 (Amazon Profit Calculator)
+# 📊 亚马逊多国财务利润统计系统v1.1 (Amazon Profit Calculator)
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-App-red.svg)](https://streamlit.io/)
