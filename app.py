@@ -171,7 +171,7 @@ if st.session_state.raw_df is not None:
                 tmpl = pd.DataFrame({'产品描述': u_skus['description'], 'SKU': u_skus['sku'], '产品和头程成本': 0.0})
                 buf = io.BytesIO()
                 with pd.ExcelWriter(buf, engine='openpyxl') as w: tmpl.to_excel(w, index=False)
-                st.download_button("⬇️ 第一步：下载 SKU 成本填写模板", data=buf.getvalue(), file_name="SKU_Cost_Template.xlsx")
+                st.download_button("⬇️ 第一步：点击下载 SKU 成本填写模板", data=buf.getvalue(), file_name="SKU_Cost_Template.xlsx")
 
 if st.session_state.raw_df is not None:
     uploaded_cost = st.file_uploader("⬇️ 第二步：上传填好的成本表（填写产品和头程成本，要换算汇率，币种跟统计站点一致）", type=["xlsx", "csv"], key="cost_up")
