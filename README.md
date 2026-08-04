@@ -1,10 +1,10 @@
-# 📊 亚马逊多国财务利润统计系统v1.1 (Amazon Profit Calculator)
+# 📊 亚马逊多国财务利润统计系统v1.2 (Amazon Profit Calculator)
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-App-red.svg)](https://streamlit.io/)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
-专为亚马逊卖家打造的**极速、精准、安全**的财务利润核算工具。彻底告别卡顿报错的传统 Excel VBA 宏，只需一键上传「日期范围报告」，即可自动分析统计，生成带完美排版的财务分析报表。
+专为亚马逊卖家打造的**极速、精准、安全**的财务利润核算工具。只需一键上传「亚马逊日期范围报告」，即可自动分析统计，生成带完美排版的财务分析报表。
 
 🌐 **[👉 点击这里，立即在线免费体验！](https://amazon-profit-calculator.streamlit.app/)**
 
@@ -44,6 +44,12 @@
 
 1.1  
 增加Order表按sku销售额平摊广告费后的利润统计
+
+1.2
+1.支持日本站  
+2.增加延迟结算订单是否统计的选项  
+3.增加退货成本统计方式的选项  
+4.增长自定义成本选项  
 
 
 
