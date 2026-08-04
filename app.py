@@ -101,12 +101,12 @@ def filter_deferred_orders(df, include_deferred):
     return df[status != 'deferred'].copy()
 
 st.set_page_config(page_title="亚马逊财务利润统计系统", layout="centered")
-st.title("📊 亚马逊财务利润统计系统v1.2")
+st.title("📊 亚马逊财务利润统计系统v1.0")
 st.caption("已支持美国/加拿大/英国/德国/法国/意大利/西班牙/瑞典/荷兰/波兰/比利时/爱尔兰/日本 13 个国家")
 
 st.info(
-    "🛡️ **数据安全承诺**：代码已在GitHub开源，网页在第三方公共云服务器Streamlit托管。您的所有报表数据仅在服务器内存中进行即时核算，"
-    "**绝不会被上传、收集或储存在服务器上**。页面刷新或关闭后数据立即销毁，请放心使用！"
+    "🛡️ **数据安全承诺**：代码已在GitHub开源。您的所有报表数据仅在内存中进行即时核算，"
+    "**绝不会被上传、收集或储存在任何服务器上**。页面刷新或关闭后数据立即销毁，请放心使用！"
 )
 st.markdown("---") 
 
@@ -300,8 +300,31 @@ if st.session_state.sku_list is not None and report_df is not None and 'type' in
     shop_p = df_t['金额 (本币)'].iloc[-1] - t_tax - total_order_cost - custom_cost
     g_m = shop_p / total_sales if total_sales != 0 else 0
 
-    df_fo = df_fo[['标题','SKU','产品和头程成本','平均售价','销售额','售出回款','退款金额','退货数量','退货率','成交金额','商品出库数量','商品成交数量','订单成本','毛利','单个利润','毛利率','广告费分摊','自定义成本分摊','扣广告和自定义成本后利润','扣广告和自定义成本后单个利润','扣广告和自定义成本后利润率']]
-    df_fo.loc[len(df_fo)] = ['合计','-','-','-', total_sales, total_receipts, total_refund_amt, total_refund_qty, (trq/toq if toq else 0),'-','-','-', total_order_cost, total_gross_profit, '-', (total_gross_profit/total_sales if total_sales else 0), report_ad_fee, custom_cost, total_profit_after_extra_costs, '-', (total_profit_after_extra_costs/total_sales if total_sales else 0)]
+    order_cols = ['标题','SKU','产品和头程成本','平均售价','销售额','售出回款','退款金额','退货数量','退货率','成交金额','商品出库数量','商品成交数量','订单成本','毛利','单个利润','毛利率','广告费分摊','自定义成本分摊','扣广告和自定义成本后利润','扣广告和自定义成本后单个利润','扣广告和自定义成本后利润率']
+    df_fo = df_fo[order_cols]
+    sku_count = len(df_fo)
+
+    other_fee_types = ['order', 'refund', 'cost of advertising', 'transfer', 'debt']
+    other_fee_summary = df[~df['type'].isin(other_fee_types)].groupby('type').agg(q=('quantity','sum'), t=('net total','sum')).reset_index()
+    other_fee_total = other_fee_summary['t'].sum() if not other_fee_summary.empty else 0
+    for _, fee in other_fee_summary.iterrows():
+        fee_amount = fee['t']
+        if fee_amount == 0:
+            continue
+        df_fo.loc[len(df_fo)] = [
+            f"未分摊费用：{TYPE_MAPPING.get(fee['type'], fee['type'])}",
+            fee['type'], '-', '-', '-', '-', '-', '-', '-', fee_amount, '-', '-', '-', fee_amount, '-', '-',
+            '-', '-', fee_amount, '-', '-'
+        ]
+
+    reconciliation_diff = shop_p - (total_profit_after_extra_costs + other_fee_total)
+    if abs(reconciliation_diff) >= 0.005:
+        df_fo.loc[len(df_fo)] = [
+            "利润口径调整", "reconciliation", '-', '-', '-', '-', '-', '-', '-', reconciliation_diff, '-', '-', '-',
+            reconciliation_diff, '-', '-', '-', '-', reconciliation_diff, '-', '-'
+        ]
+
+    df_fo.loc[len(df_fo)] = ['合计','-','-','-', total_sales, total_receipts, total_refund_amt, total_refund_qty, (trq/toq if toq else 0),'-','-','-', total_order_cost, total_gross_profit + other_fee_total + reconciliation_diff, '-', ((total_gross_profit + other_fee_total + reconciliation_diff)/total_sales if total_sales else 0), report_ad_fee, custom_cost, shop_p, '-', (shop_p/total_sales if total_sales else 0)]
     
     buf_f = io.BytesIO()
     with pd.ExcelWriter(buf_f, engine='openpyxl') as w:
@@ -322,7 +345,7 @@ if st.session_state.sku_list is not None and report_df is not None and 'type' in
         ws_t.merge_cells('A1:E1'); ws_t['A1']='费用汇总'; ws_t['A1'].font=Font(bold=True,size=16); ws_t['A1'].alignment=Alignment(horizontal='center')
         
 
-        stats = [("日期范围",d_r,"SKU数量",len(df_fo)-1), ("延迟结算口径", deferred_order_mode, "", ""), ("退货成本口径", return_cost_mode, "", ""), ("提现金额",abs(df[df['type']=='transfer']['total'].sum()),"存入金额",df[df['type']=='debt']['total'].sum()), ("总退货率",(trq/toq if toq else 0),"店铺利润",shop_p), ("产品和头程成本", total_order_cost, "毛利率", g_m), ("报表广告费", report_ad_fee, "自定义成本", custom_cost), ("税金负债", t_tax, "", "")]
+        stats = [("日期范围",d_r,"SKU数量",sku_count), ("延迟结算口径", deferred_order_mode, "", ""), ("退货成本口径", return_cost_mode, "", ""), ("提现金额",abs(df[df['type']=='transfer']['total'].sum()),"存入金额",df[df['type']=='debt']['total'].sum()), ("总退货率",(trq/toq if toq else 0),"店铺利润",shop_p), ("产品和头程成本", total_order_cost, "毛利率", g_m), ("报表广告费", report_ad_fee, "自定义成本", custom_cost), ("税金负债", t_tax, "", "")]
         
         for r, (k1,v1,k2,v2) in enumerate(stats, 3):
             ws_t[f'B{r}']=k1; ws_t[f'C{r}']=v1; ws_t[f'D{r}']=k2; ws_t[f'E{r}']=v2
