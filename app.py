@@ -37,6 +37,7 @@ BUILTIN_COL_MAP, BUILTIN_VAL_MAP, TYPE_MAPPING, MONTH_MAP = load_mappings()
 def clean_and_parse_date(val):
     if pd.isna(val) or str(val).strip() == "": return pd.NaT
     vc = re.sub(r'\s+[A-Za-z]{3,4}$', '', str(val).strip()).strip()
+    vc = vc.replace('年', '/').replace('月', '/').replace('日', '')
     try:
         if re.search(r'\d{1,2}\.\d{1,2}\.\d{4}', vc): return pd.to_datetime(vc, dayfirst=True)
         elif re.search(r'\d{1,2}/\d{1,2}/\d{4}', vc): return pd.to_datetime(vc, dayfirst=False)
@@ -72,6 +73,9 @@ def safe_parse_number(val):
 
 def map_amazon_type(row):
     t, d = str(row.get('type', '')).lower(), str(row.get('description', '')).strip()
+    d_mapped = BUILTIN_VAL_MAP.get(d.lower())
+    if d_mapped and t not in ('order', 'refund', 'transfer', 'debt') and d_mapped != 'others':
+        return d_mapped
     if t == 'service fee':
         if 'Coupon Redemption Fee' in d: return 'coupon redemption fee'
         return d.lower()
@@ -82,9 +86,23 @@ def map_amazon_type(row):
     if 'FBA Inventory Storage Fee' in d: return 'fba inventory storage fee'
     return t
 
+def decode_csv_bytes(raw_bytes):
+    for enc in ['utf-8-sig', 'utf-8', 'cp932', 'shift_jis']:
+        try:
+            return raw_bytes.decode(enc), enc
+        except UnicodeDecodeError:
+            continue
+    return raw_bytes.decode('utf-8', errors='ignore'), 'utf-8'
+
+def filter_deferred_orders(df, include_deferred):
+    if include_deferred or 'transaction status' not in df.columns:
+        return df.copy()
+    status = df['transaction status'].astype(str).str.strip().str.lower()
+    return df[status != 'deferred'].copy()
+
 st.set_page_config(page_title="亚马逊财务利润统计系统", layout="centered")
-st.title("📊 亚马逊财务利润统计系统v1.1")
-st.caption("已支持美国/加拿大/英国/德国/法国/意大利/西班牙/瑞典/荷兰/波兰/比利时/爱尔兰 12 个国家")
+st.title("📊 亚马逊财务利润统计系统v1.2")
+st.caption("已支持美国/加拿大/英国/德国/法国/意大利/西班牙/瑞典/荷兰/波兰/比利时/爱尔兰/日本 13 个国家")
 
 st.info(
     "🛡️ **数据安全承诺**：代码已在GitHub开源。您的所有报表数据仅在内存中进行即时核算，"
@@ -101,13 +119,16 @@ with st.sidebar:
 
 if 'raw_df' not in st.session_state: st.session_state.raw_df = None
 if 'sku_list' not in st.session_state: st.session_state.sku_list = None
+if 'custom_cost' not in st.session_state: st.session_state.custom_cost = 0.0
+if 'return_cost_mode' not in st.session_state: st.session_state.return_cost_mode = "退货不计产品成本"
+if 'deferred_order_mode' not in st.session_state: st.session_state.deferred_order_mode = "统计延迟结算订单"
 
 uploaded_report = st.file_uploader("请上传亚马逊日期范围报告 (CSV)", type=["csv"], key="report_up")
 
 if uploaded_report:
     try:
         raw_bytes = uploaded_report.getvalue()
-        content = raw_bytes.decode('utf-8', errors='ignore')
+        content, detected_encoding = decode_csv_bytes(raw_bytes)
         lines = content.splitlines()
         
         header_idx, detected_sep = 0, ','
@@ -125,7 +146,7 @@ if uploaded_report:
                     break
                     
         uploaded_report.seek(0)
-        df = pd.read_csv(uploaded_report, encoding='utf-8', sep=detected_sep, engine='python', skiprows=header_idx)
+        df = pd.read_csv(io.BytesIO(raw_bytes), encoding=detected_encoding, sep=detected_sep, engine='python', skiprows=header_idx)
         
         original_cols = list(df.columns)
         if len(original_cols) > 0: original_cols[0] = 'date'
@@ -134,7 +155,7 @@ if uploaded_report:
 
         df.rename(columns=BUILTIN_COL_MAP, inplace=True)
         
-        exclude = {'date','sku','type','description','order id','marketplace','fulfillment','settlement id','abrechnungsnummer'}
+        exclude = {'date','sku','type','description','order id','marketplace','fulfillment','settlement id','abrechnungsnummer','transaction status'}
         for c in df.columns:
             if c.lower() not in exclude:
                 df[c] = df[c].apply(safe_parse_number)
@@ -146,6 +167,9 @@ if uploaded_report:
             df['type'] = df['type'].apply(lambda x: BUILTIN_VAL_MAP.get(x, x))
         else:
             st.error("警告：找不到 Type 列。")
+
+        if 'transaction status' in df.columns:
+            df['transaction status'] = df['transaction status'].astype(str).str.strip().str.lower().apply(lambda x: BUILTIN_VAL_MAP.get(x, x))
 
         calc_cols = ['total','tax_sales','tax_shipping','tax_giftwrap','tax_promo','tax_withheld']
         for c in calc_cols:
@@ -161,17 +185,37 @@ if uploaded_report:
 
     except Exception as e: st.error(f"解析失败: {e}")
 
+report_df = st.session_state.raw_df
+include_deferred_orders = True
 if st.session_state.raw_df is not None:
     st.markdown("---")
-    if 'type' in st.session_state.raw_df.columns:
-        df_f = st.session_state.raw_df[st.session_state.raw_df['type'].isin(['order', 'refund'])]
+    deferred_order_mode = st.radio(
+        "延迟结算订单统计方式",
+        ["统计延迟结算订单", "不统计延迟结算订单"],
+        index=0 if st.session_state.deferred_order_mode == "统计延迟结算订单" else 1,
+        horizontal=True
+    )
+    st.caption("说明：日期范围报告中 transaction status 为 Deferred 的订单，代表延迟回款。选择不统计时，会从后续成本模板和利润报表中排除。")
+    st.session_state.deferred_order_mode = deferred_order_mode
+    include_deferred_orders = deferred_order_mode == "统计延迟结算订单"
+    report_df = filter_deferred_orders(st.session_state.raw_df, include_deferred_orders)
+    if not include_deferred_orders:
+        if 'transaction status' in st.session_state.raw_df.columns:
+            excluded_count = len(st.session_state.raw_df) - len(report_df)
+            st.info(f"已排除 {excluded_count} 行延迟结算订单/交易。")
+        else:
+            st.warning("当前报表未找到 transaction status 列，无法识别延迟结算订单，将按全部数据统计。")
+
+if st.session_state.raw_df is not None:
+    if 'type' in report_df.columns:
+        df_f = report_df[report_df['type'].isin(['order', 'refund'])]
         if 'sku' in df_f.columns and 'description' in df_f.columns:
             u_skus = df_f[['sku', 'description']].dropna(subset=['sku']).drop_duplicates(subset=['sku'])
             if not u_skus.empty:
                 tmpl = pd.DataFrame({'产品描述': u_skus['description'], 'SKU': u_skus['sku'], '产品和头程成本': 0.0})
                 buf = io.BytesIO()
                 with pd.ExcelWriter(buf, engine='openpyxl') as w: tmpl.to_excel(w, index=False)
-                st.download_button("⬇️ 第一步：点击下载 SKU 成本填写模板", data=buf.getvalue(), file_name="SKU_Cost_Template.xlsx")
+                st.download_button("⬇️ 第一步：下载 SKU 成本填写模板", data=buf.getvalue(), file_name="SKU_Cost_Template.xlsx")
 
 if st.session_state.raw_df is not None:
     uploaded_cost = st.file_uploader("⬇️ 第二步：上传填好的成本表（填写产品和头程成本，要换算汇率，币种跟统计站点一致）", type=["xlsx", "csv"], key="cost_up")
@@ -191,9 +235,27 @@ if st.session_state.raw_df is not None:
                 st.error("❌ 成本表列名错误。")
         except Exception as e: st.error(f"成本读取失败: {e}")
 
-if st.session_state.sku_list is not None and 'type' in st.session_state.raw_df.columns:
+if st.session_state.sku_list is not None and report_df is not None and 'type' in report_df.columns:
     st.markdown("---")
-    df, sc = st.session_state.raw_df, st.session_state.sku_list
+    custom_cost = st.number_input(
+        "第三步：输入自定义成本（本币，可选）",
+        min_value=0.0,
+        value=float(st.session_state.custom_cost),
+        step=1.0,
+        format="%.2f"
+    )
+    st.caption("说明：例如扣信用卡的广告费。该金额会单独分摊显示，并从店铺利润中扣除。")
+    st.session_state.custom_cost = custom_cost
+    return_cost_mode = st.radio(
+        "退货成本计算方式",
+        ["退货不计产品成本", "退货也计产品成本"],
+        index=0 if st.session_state.return_cost_mode == "退货不计产品成本" else 1,
+        horizontal=True
+    )
+    st.caption("说明：退货不计产品成本按商品成交数量计算成本；退货也计产品成本按商品出库数量计算成本。")
+    st.session_state.return_cost_mode = return_cost_mode
+
+    df, sc = report_df, st.session_state.sku_list
     d_r = f"{df['date'].min().strftime('%Y/%m/%d')} - {df['date'].max().strftime('%Y/%m/%d')}" if not df['date'].isna().all() else "未知"
     
     SORT_PRIORITY = {'order': 1, 'refund': 2, 'cost of advertising': 3, 'subscription fee': 4, 'service fee': 5, 'fba inventory storage fee': 6, 'fba long-term storage fee': 7, 'fba inventory fee': 8, 'adjustment': 9, 'coupon redemption fee': 10, 'liquidations': 11}
@@ -218,47 +280,49 @@ if st.session_state.sku_list is not None and 'type' in st.session_state.raw_df.c
     
     df_fo = pd.merge(pd.DataFrame(res), sc, on='SKU', how='left')
     df_fo['产品和头程成本'] = df_fo['产品和头程成本'].fillna(0)
-    df_fo['订单成本'] = df_fo['商品成交数量'] * df_fo['产品和头程成本']
+    cost_qty_col = '商品出库数量' if return_cost_mode == "退货也计产品成本" else '商品成交数量'
+    df_fo['订单成本'] = df_fo[cost_qty_col] * df_fo['产品和头程成本']
     df_fo['毛利'] = df_fo['成交金额'] - df_fo['订单成本']
     df_fo['单个利润'] = np.where(df_fo['商品成交数量']!=0, df_fo['毛利']/df_fo['商品成交数量'], 0)
     df_fo['毛利率'] = np.where(df_fo['销售额']!=0, df_fo['毛利']/df_fo['销售额'], 0)
 
     total_sales, total_receipts = df_fo['销售额'].sum(), df_fo['售出回款'].sum()
-    total_ad_fee = abs(df[df['type']=='cost of advertising']['total'].sum())
-    df_fo['广告费分摊'] = np.where(total_sales!=0, total_ad_fee * df_fo['销售额'] / total_sales, 0)
-    df_fo['扣广告后利润'] = df_fo['毛利'] - df_fo['广告费分摊']
-    df_fo['扣广告后单个利润'] = np.where(df_fo['商品成交数量']!=0, df_fo['扣广告后利润']/df_fo['商品成交数量'], 0)
-    df_fo['扣广告后利润率'] = np.where(df_fo['销售额']!=0, df_fo['扣广告后利润']/df_fo['销售额'], 0)
+    report_ad_fee = abs(df[df['type']=='cost of advertising']['total'].sum())
+    df_fo['广告费分摊'] = np.where(total_sales!=0, report_ad_fee * df_fo['销售额'] / total_sales, 0)
+    df_fo['自定义成本分摊'] = np.where(total_sales!=0, custom_cost * df_fo['销售额'] / total_sales, 0)
+    df_fo['扣广告和自定义成本后利润'] = df_fo['毛利'] - df_fo['广告费分摊'] - df_fo['自定义成本分摊']
+    df_fo['扣广告和自定义成本后单个利润'] = np.where(df_fo['商品成交数量']!=0, df_fo['扣广告和自定义成本后利润']/df_fo['商品成交数量'], 0)
+    df_fo['扣广告和自定义成本后利润率'] = np.where(df_fo['销售额']!=0, df_fo['扣广告和自定义成本后利润']/df_fo['销售额'], 0)
     total_refund_amt, total_refund_qty = df_fo['退款金额'].sum(), df_fo['退货数量'].sum()
     total_order_cost, total_gross_profit = df_fo['订单成本'].sum(), df_fo['毛利'].sum()
-    total_profit_after_ad = df_fo['扣广告后利润'].sum()
+    total_profit_after_extra_costs = df_fo['扣广告和自定义成本后利润'].sum()
     t_tax = round((df['total']-df['net total']).sum(), 2)
-    shop_p = df_t['金额 (本币)'].iloc[-1] - t_tax - total_order_cost
+    shop_p = df_t['金额 (本币)'].iloc[-1] - t_tax - total_order_cost - custom_cost
     g_m = shop_p / total_sales if total_sales != 0 else 0
 
-    df_fo = df_fo[['标题','SKU','产品和头程成本','平均售价','销售额','售出回款','退款金额','退货数量','退货率','成交金额','商品出库数量','商品成交数量','订单成本','毛利','单个利润','毛利率','广告费分摊','扣广告后利润','扣广告后单个利润','扣广告后利润率']]
-    df_fo.loc[len(df_fo)] = ['合计','-','-','-', total_sales, total_receipts, total_refund_amt, total_refund_qty, (trq/toq if toq else 0),'-','-','-', total_order_cost, total_gross_profit, '-', (total_gross_profit/total_sales if total_sales else 0), total_ad_fee, total_profit_after_ad, '-', (total_profit_after_ad/total_sales if total_sales else 0)]
+    df_fo = df_fo[['标题','SKU','产品和头程成本','平均售价','销售额','售出回款','退款金额','退货数量','退货率','成交金额','商品出库数量','商品成交数量','订单成本','毛利','单个利润','毛利率','广告费分摊','自定义成本分摊','扣广告和自定义成本后利润','扣广告和自定义成本后单个利润','扣广告和自定义成本后利润率']]
+    df_fo.loc[len(df_fo)] = ['合计','-','-','-', total_sales, total_receipts, total_refund_amt, total_refund_qty, (trq/toq if toq else 0),'-','-','-', total_order_cost, total_gross_profit, '-', (total_gross_profit/total_sales if total_sales else 0), report_ad_fee, custom_cost, total_profit_after_extra_costs, '-', (total_profit_after_extra_costs/total_sales if total_sales else 0)]
     
     buf_f = io.BytesIO()
     with pd.ExcelWriter(buf_f, engine='openpyxl') as w:
         df_fo.to_excel(w, index=False, sheet_name='Order', startrow=2)
         ws_o = w.sheets['Order']
-        ws_o.merge_cells('A1:T1'); ws_o['A1']='订单统计表'; ws_o['A1'].font=Font(bold=True,size=16); ws_o['A1'].alignment=Alignment(horizontal='center')
+        ws_o.merge_cells('A1:U1'); ws_o['A1']='订单统计表'; ws_o['A1'].font=Font(bold=True,size=16); ws_o['A1'].alignment=Alignment(horizontal='center')
         ws_o.column_dimensions['A'].width=40; ws_o.column_dimensions['B'].width=18
-        for c in range(3,21): ws_o.column_dimensions[get_column_letter(c)].width=15
+        for c in range(3,22): ws_o.column_dimensions[get_column_letter(c)].width=15
         for row in ws_o.iter_rows(min_row=3):
             for cell in row:
                 cell.alignment=Alignment(horizontal='center')
                 if cell.row==3 or cell.row==ws_o.max_row: cell.font=Font(bold=True); cell.fill=PatternFill(start_color="F2F2F2",fill_type="solid")
-                if cell.column in [9,16,20] and cell.row>3: cell.number_format='0.00%'
-                elif cell.column in [3,4,5,6,7,10,13,14,15,17,18,19] and cell.row>3: cell.number_format='0.00'
+                if cell.column in [9,16,21] and cell.row>3: cell.number_format='0.00%'
+                elif cell.column in [3,4,5,6,7,10,13,14,15,17,18,19,20] and cell.row>3: cell.number_format='0.00'
         
-        df_t.to_excel(w, index=False, sheet_name='TOTAL', startrow=7)
+        df_t.to_excel(w, index=False, sheet_name='TOTAL', startrow=11)
         ws_t = w.sheets['TOTAL']
         ws_t.merge_cells('A1:E1'); ws_t['A1']='费用汇总'; ws_t['A1'].font=Font(bold=True,size=16); ws_t['A1'].alignment=Alignment(horizontal='center')
         
 
-        stats = [("日期范围",d_r,"SKU数量",len(df_fo)-1), ("提现金额",abs(df[df['type']=='transfer']['total'].sum()),"存入金额",df[df['type']=='debt']['total'].sum()), ("总退货率",(trq/toq if toq else 0),"店铺利润",shop_p), ("产品和头程成本", total_order_cost, "毛利率", g_m), ("税金负债",t_tax,"","")]
+        stats = [("日期范围",d_r,"SKU数量",len(df_fo)-1), ("延迟结算口径", deferred_order_mode, "", ""), ("退货成本口径", return_cost_mode, "", ""), ("提现金额",abs(df[df['type']=='transfer']['total'].sum()),"存入金额",df[df['type']=='debt']['total'].sum()), ("总退货率",(trq/toq if toq else 0),"店铺利润",shop_p), ("产品和头程成本", total_order_cost, "毛利率", g_m), ("报表广告费", report_ad_fee, "自定义成本", custom_cost), ("税金负债", t_tax, "", "")]
         
         for r, (k1,v1,k2,v2) in enumerate(stats, 3):
             ws_t[f'B{r}']=k1; ws_t[f'C{r}']=v1; ws_t[f'D{r}']=k2; ws_t[f'E{r}']=v2
@@ -268,8 +332,8 @@ if st.session_state.sku_list is not None and 'type' in st.session_state.raw_df.c
             ws_t[f'E{r}'].alignment = Alignment(horizontal='center', vertical='center')
             
 
-        ws_t['C4'].number_format = ws_t['E4'].number_format = ws_t['C6'].number_format = ws_t['C7'].number_format = '0.00'
-        ws_t['C5'].number_format = ws_t['E6'].number_format = '0.00%'
+        ws_t['C6'].number_format = ws_t['E6'].number_format = ws_t['E7'].number_format = ws_t['C8'].number_format = ws_t['C9'].number_format = ws_t['E9'].number_format = ws_t['C10'].number_format = ws_t['E10'].number_format = '0.00'
+        ws_t['C7'].number_format = ws_t['E8'].number_format = '0.00%'
         
 
         ws_t.column_dimensions['A'].width=10; ws_t.column_dimensions['B'].width=35; ws_t.column_dimensions['C'].width=30; ws_t.column_dimensions['D'].width=15; ws_t.column_dimensions['E'].width=18
@@ -277,15 +341,15 @@ if st.session_state.sku_list is not None and 'type' in st.session_state.raw_df.c
 
         thin_border = Border(top=Side(style='thin'), bottom=Side(style='thin'))
         header_fill = PatternFill(start_color="F2F2F2", fill_type="solid")
-        for row in ws_t.iter_rows(min_row=8):
+        for row in ws_t.iter_rows(min_row=12):
             for cell in row:
                 cell.alignment=Alignment(horizontal='center')
-                if cell.row==8 or cell.row==ws_t.max_row: 
+                if cell.row==12 or cell.row==ws_t.max_row: 
                     cell.font=Font(bold=True)
                     cell.border=thin_border
-                if cell.row==8: 
+                if cell.row==12: 
                     cell.fill=header_fill
-                if cell.column==5 and cell.row>8: 
+                if cell.column==5 and cell.row>12: 
                     cell.number_format='0.00'
 
         df_raw_exp = df.copy()
@@ -293,4 +357,4 @@ if st.session_state.sku_list is not None and 'type' in st.session_state.raw_df.c
         df_raw_exp.to_excel(w, index=False, sheet_name='RawData')
         for c in range(1,len(df.columns)+1): w.sheets['RawData'].column_dimensions[get_column_letter(c)].width=20
 
-    st.download_button("🚀 第三步：下载完整美化报表", data=buf_f.getvalue(), file_name=f"Amazon_Final_Report_{datetime.now().strftime('%Y%m%d')}.xlsx")
+    st.download_button("🚀 第四步：下载完整美化报表", data=buf_f.getvalue(), file_name=f"Amazon_Final_Report_{datetime.now().strftime('%Y%m%d')}.xlsx")
