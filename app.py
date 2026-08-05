@@ -252,7 +252,7 @@ if st.session_state.sku_list is not None and report_df is not None and 'type' in
         index=0 if st.session_state.return_cost_mode == "退货不计产品成本" else 1,
         horizontal=True
     )
-    st.caption("说明：退货不计产品成本按商品成交数量计算成本；退货也计产品成本按商品出库数量计算成本。")
+    st.caption("说明：库存默认可以回收重新销售，退货不计产品成本；库存默认不可回收重新销售，退货计产品成本，当成货损。")
     st.session_state.return_cost_mode = return_cost_mode
 
     df, sc = report_df, st.session_state.sku_list
