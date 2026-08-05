@@ -218,7 +218,7 @@ if st.session_state.raw_df is not None:
                 st.download_button("⬇️ 第一步：下载 SKU 成本填写模板", data=buf.getvalue(), file_name="SKU_Cost_Template.xlsx")
 
 if st.session_state.raw_df is not None:
-    uploaded_cost = st.file_uploader("⬇️ 第二步：上传填好的成本表（填写产品和头程成本，要换算汇率，币种跟统计站点一致）", type=["xlsx", "csv"], key="cost_up")
+    uploaded_cost = st.file_uploader("⬇️ 第二步：上传填好的成本表（填写产品和头程成本，要换算汇率，币种跟统计站点币种一致）", type=["xlsx", "csv"], key="cost_up")
     if uploaded_cost:
         try:
             cdf = pd.read_excel(uploaded_cost) if str(uploaded_cost.name).endswith('xlsx') else pd.read_csv(uploaded_cost)
@@ -238,13 +238,13 @@ if st.session_state.raw_df is not None:
 if st.session_state.sku_list is not None and report_df is not None and 'type' in report_df.columns:
     st.markdown("---")
     custom_cost = st.number_input(
-        "第三步：输入自定义成本（本币，可选）",
+        "第三步：输入自定义成本（币种跟统计站点币种一致，可选填）",
         min_value=0.0,
         value=float(st.session_state.custom_cost),
         step=1.0,
         format="%.2f"
     )
-    st.caption("说明：例如扣信用卡的广告费。该金额会单独分摊显示，并从店铺利润中扣除。")
+    st.caption("说明：例如扣信用卡的广告费、测评、水电租金等平台外支出。该金额会单独显示，并从店铺利润中扣除。")
     st.session_state.custom_cost = custom_cost
     return_cost_mode = st.radio(
         "退货成本计算方式",
